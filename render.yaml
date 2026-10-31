@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: citypulse
+    runtime: node
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+      - key: OPENAQ_API_KEY
+        sync: false

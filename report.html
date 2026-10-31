@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6f7f2" />
+    <meta name="description" content="CityPulse architecture, technical decisions, data flow, and deployment report." />
+    <title>Technical report — CityPulse</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!-- Shared site navigation keeps the report connected to the landing page and app. -->
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="CityPulse home"><span class="brand-mark">C</span> citypulse</a>
+      <nav aria-label="Main navigation"><a href="/">Home</a><a href="/app.html">Open the app</a></nav>
+    </header>
+    <main class="report-shell">
+      <!-- Report introduction and table of contents summarize the project's scope. -->
+      <p class="eyebrow">TECHNICAL REPORT · CITYPULSE</p>
+      <h1>From open data<br /><span>to a useful city snapshot.</span></h1>
+      <p class="report-intro">This report documents the project scope, technology choices, data and error handling, and the distinct roles of APIs, MCP, and Agent Skills.</p>
+      <nav class="report-toc" aria-label="Report contents">
+        <a href="#overview">01 Overview</a><a href="#architecture">02 Architecture</a><a href="#decisions">03 Decisions</a><a href="#operations">04 Operations</a><a href="#submission">05 Submission</a>
+      </nav>
+
+      <!-- Project overview explains why the two complementary data sources are combined. -->
+      <section class="report-section" id="overview">
+        <p class="section-kicker">01 / PROJECT OVERVIEW</p><h2>Two perspectives on the same city</h2>
+        <p>CityPulse combines current weather from the <strong>Open-Meteo Forecast API</strong> with nearby monitoring-station readings from <strong>OpenAQ API v3</strong>. A user searches by city name; geocoding returns coordinates that the app uses to fetch the weather and the closest available air-quality station.</p>
+        <p>This pairing adds everyday context, but the two sources may represent different places and reporting times. Particulate matter (PM) values are measured concentrations, not AQI values.</p>
+      </section>
+
+      <!-- Architecture flows show API ownership, the server-side secret boundary, and MCP usage. -->
+      <section class="report-section" id="architecture">
+        <p class="section-kicker">02 / ARCHITECTURE</p><h2>Data flow and security boundaries</h2>
+        <div class="architecture-flow"><div><strong>Browser</strong><span>Search and display</span></div><i>→</i><div><strong>Express API</strong><span>Validate · proxy · rate limit</span></div><i>→</i><div><strong>Open-Meteo + OpenAQ</strong><span>Weather and station data</span></div></div>
+        <div class="architecture-flow mcp-flow"><div><strong>Express API</strong><span>Pass normalized values</span></div><i>⇄</i><div><strong>CityPulse MCP (stdio)</strong><span>City-summary tool</span></div><i>→</i><div><strong>UI insight</strong><span>Summary with limitations</span></div></div>
+        <p>The frontend uses Fetch API with async/await to call same-origin backend routes. The backend keeps the OpenAQ API key private and calls its MCP tool over stdio. This demonstrates MCP in a Node service where the app backend and MCP subprocess run together.</p>
+      </section>
+
+      <!-- Technical decisions record implementation choices and failure behavior. -->
+      <section class="report-section" id="decisions">
+        <p class="section-kicker">03 / TECHNICAL DECISIONS</p><h2>Implementation choices and failure handling</h2>
+        <div class="decision-list">
+          <article><span>01</span><div><h3>Vite + vanilla JavaScript</h3><p>Multi-page UI without an unnecessary framework; native Fetch API keeps the asynchronous data flow explicit.</p></div></article>
+          <article><span>02</span><div><h3>Express server-side API proxy</h3><p>The browser never receives the API key. The backend validates query parameters and coordinates, applies request timeouts, maps upstream errors, and rate-limits API calls.</p></div></article>
+          <article><span>03</span><div><h3>Independent source states</h3><p>If OpenAQ has no key, station, or response, available Open-Meteo weather remains visible with an explicit unavailable message. A weather API failure returns an actionable error instead of fabricated data.</p></div></article>
+          <article><span>04</span><div><h3>MCP behind the backend</h3><p>The MCP server exposes one typed tool to summarize normalized values. It accepts no SQL and makes no upstream requests; the backend connects through an MCP Client and stdio transport.</p></div></article>
+          <article><span>05</span><div><h3>No invented AQI value</h3><p>OpenAQ provides sensor concentrations rather than an AQI score. The UI shows units and data limitations instead of implying unsupported health guidance.</p></div></article>
+        </div>
+        <div class="comparison">
+          <div><h3>API</h3><p>An HTTP contract for retrieving structured source data such as geocoding, forecasts, and sensor measurements.</p></div>
+          <div><h3>MCP</h3><p>A protocol that connects a model or client to tools. Here it exposes a tool that summarizes data already collected by the app.</p></div>
+          <div><h3>Agent Skill</h3><p>On-demand workflow instructions for an AI coding agent. It supports development and maintenance; it is not a data API or runtime service.</p></div>
+        </div>
+      </section>
+
+      <!-- Operations instructions cover local setup, security, and a production deployment shape. -->
+      <section class="report-section" id="operations">
+        <p class="section-kicker">04 / OPERATIONS</p><h2>Setup, testing, and deployment</h2>
+        <ol class="steps">
+          <li>Copy <code>.env.example</code> to <code>.env</code> and set <code>OPENAQ_API_KEY</code>. Never put the key in frontend code.</li>
+          <li>Run <code>npm install</code>, then <code>npm run dev</code>. Open the Vite URL; the backend listens on port 3001.</li>
+          <li>Run <code>npm test</code> and <code>npm run build</code> before deployment.</li>
+          <li>Deploy as a Node web service: build command <code>npm ci --include=dev &amp;&amp; npm run build</code>, start command <code>npm start</code>, and configure <code>OPENAQ_API_KEY</code> as a host secret.</li>
+        </ol>
+        <p>The Vite development proxy and production same-origin setup avoid browser CORS issues. Render deployment is configured in <code>render.yaml</code>; other hosts must provide a Node.js 20–24 runtime and the environment variables described above. The rate limiter uses in-memory state, suitable for a demo or single instance; multi-instance production should use a shared store. Confirm current OpenAQ key, quota, terms, and service availability before release.</p>
+      </section>
+
+      <!-- Submission template gives reviewers a concise route to the live app and its report. -->
+      <section class="submission-card" id="submission">
+        <p class="section-kicker">SUBMISSION COMMENT</p><h2>Ready-to-use submission text</h2>
+        <p>CityPulse is a data-driven city dashboard combining weather from Open-Meteo with nearby air-quality readings from OpenAQ. It includes an MCP tool for summarizing collected data and an Agent Skill for development guidance.</p>
+        <ul><li>Live app: <code>Replace with deployed URL: / and /app.html</code></li><li>Technical report: <code>Replace with deployed URL: /report.html</code></li><li>Repository: <code>Replace with repository URL</code></li></ul>
+        <p class="submission-note">Replace the placeholders with real URLs after deployment and verify that the server-side API key is configured.</p>
+      </section>
+      <p class="back-link"><a href="/">← Back to home</a><a href="/app.html">Open CityPulse →</a></p>
+    </main>
+  </body>
+</html>

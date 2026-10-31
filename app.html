@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6f7f2" />
+    <meta name="description" content="Search for a city and explore its weather forecast alongside readings from nearby air-quality stations." />
+    <title>Explore a city — CityPulse</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!-- Shared site navigation connects the dashboard to the landing page and report. -->
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="CityPulse home"><span class="brand-mark">C</span> citypulse</a>
+      <nav aria-label="Main navigation"><a href="/">Home</a><a href="/report.html">Technical report</a></nav>
+    </header>
+    <main class="app-shell">
+      <!-- Search and status region handles location discovery and user feedback. -->
+      <section class="app-heading">
+        <p class="eyebrow">CITY DASHBOARD</p>
+        <h1>Weather in your city</h1>
+        <p>Choose a location to see current conditions and readings from nearby air-quality stations.</p>
+      </section>
+      <form class="search-form" id="search-form">
+        <label class="sr-only" for="city-input">City name</label>
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input id="city-input" name="city" type="search" placeholder="Try a city, e.g. Bangkok or Reykjavík" autocomplete="off" minlength="2" required />
+        <button class="button button-primary" type="submit">Search</button>
+      </form>
+      <div id="search-status" class="inline-status" role="status" aria-live="polite"></div>
+      <!-- Quick picks search for a city and load its matching country directly. -->
+      <section class="popular-cities" aria-labelledby="popular-cities-title">
+        <h2 id="popular-cities-title">Popular cities</h2>
+        <div class="city-picks">
+          <button class="city-pick" type="button" data-city="Bangkok" data-country="Thailand">Bangkok</button>
+          <button class="city-pick" type="button" data-city="Reykjavik" data-country="Iceland">Reykjavik</button>
+          <button class="city-pick" type="button" data-city="Tokyo" data-country="Japan">Tokyo</button>
+          <button class="city-pick" type="button" data-city="London" data-country="United Kingdom">London</button>
+          <button class="city-pick" type="button" data-city="New York" data-country="United States">New York</button>
+        </div>
+      </section>
+      <!-- Search results and the dashboard are populated safely from the API response. -->
+      <section id="city-results" class="city-results" aria-label="City search results"></section>
+      <section id="dashboard" class="dashboard" hidden aria-live="polite"></section>
+      <!-- Measurement disclaimer avoids presenting particulate concentration as AQI or medical advice. -->
+      <p class="app-disclaimer">Air-quality data depends on station coverage and reporting time. PM readings are measured concentrations, not AQI values or medical advice.</p>
+    </main>
+    <footer class="app-footer"><a href="/">← Back to home</a><span>Data sources: Open-Meteo · OpenAQ</span></footer>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
