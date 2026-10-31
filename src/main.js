@@ -4,7 +4,17 @@ const input = document.querySelector("#city-input");
 const status = document.querySelector("#search-status");
 const results = document.querySelector("#city-results");
 const dashboard = document.querySelector("#dashboard");
-const cityPicks = document.querySelectorAll(".city-pick");
+const popularCityButtons = document.querySelector("#popular-city-buttons");
+
+// Provide direct-load example cities so visitors can explore without typing a search.
+const popularCities = [
+  { name: "Bangkok", country: "Thailand", latitude: 13.7563, longitude: 100.5018 },
+  { name: "London", country: "United Kingdom", latitude: 51.5072, longitude: -0.1276 },
+  { name: "New York", country: "United States", latitude: 40.7128, longitude: -74.006 },
+  { name: "Reykjavík", country: "Iceland", latitude: 64.1466, longitude: -21.94 },
+  { name: "Singapore", country: "Singapore", latitude: 1.3521, longitude: 103.8198 },
+  { name: "Tokyo", country: "Japan", latitude: 35.6762, longitude: 139.6503 }
+];
 
 // Map Open-Meteo weather codes to concise English labels for the dashboard.
 const weatherDescriptions = {
@@ -67,6 +77,21 @@ function addResultButton(place) {
   button.append(name, detail);
   button.addEventListener("click", () => loadCity(place));
   results.append(button);
+}
+
+// Render accessible example-city buttons and load the selected coordinates directly.
+function renderPopularCities() {
+  for (const city of popularCities) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "popular-city-button";
+    button.append(
+      createTextElement("strong", "", city.name),
+      createTextElement("span", "", city.country)
+    );
+    button.addEventListener("click", () => loadCity(city));
+    popularCityButtons.append(button);
+  }
 }
 
 // Create small labeled elements consistently for all dashboard measurements.
@@ -176,8 +201,12 @@ async function loadCity(place) {
   }
 }
 
-// Search locations and optionally load a quick-pick match from its expected country.
-async function searchCities(query, preferredCountry = "") {
+renderPopularCities();
+
+// Search Open-Meteo geocoding results and let the user choose the exact location.
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const query = input.value.trim();
   if (query.length < 2) {
     setStatus("Enter a city name with at least 2 characters.", "error");
     return;
@@ -187,37 +216,13 @@ async function searchCities(query, preferredCountry = "") {
   setStatus("Searching for cities…", "loading");
   try {
     const payload = await requestJson(`/api/geocode?q=${encodeURIComponent(query)}`);
-    const places = payload.results || [];
-    if (!places.length) {
+    if (!payload.results.length) {
       setStatus("No matching cities found. Check the spelling or try another name.", "error");
       return;
     }
-    if (preferredCountry) {
-      const countryMatch = places.find((place) =>
-        place.country.toLowerCase() === preferredCountry.toLowerCase()
-      );
-      if (countryMatch) {
-        await loadCity(countryMatch);
-        return;
-      }
-    }
-    for (const place of places) addResultButton(place);
+    for (const place of payload.results) addResultButton(place);
     setStatus("Choose a location to view its data.", "success");
   } catch (error) {
     setStatus(error.message || "Search failed. Please try again.", "error");
   }
-}
-
-// Keep free-text search and popular-city quick picks on the same lookup flow.
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  await searchCities(input.value.trim());
 });
-
-for (const button of cityPicks) {
-  button.addEventListener("click", async () => {
-    const city = button.dataset.city;
-    input.value = city;
-    await searchCities(city, button.dataset.country);
-  });
-}

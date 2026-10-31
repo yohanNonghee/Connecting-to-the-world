@@ -81,6 +81,7 @@ async function getAirQuality(latitude, longitude) {
     return { available: false, message: "OpenAQ API key is not configured on the server.", measurements: [] };
   }
 
+  const freshnessWindowMs = 7 * 24 * 60 * 60 * 1000;
   const locationsUrl = new URL("https://api.openaq.org/v3/locations");
   locationsUrl.searchParams.set("coordinates", `${latitude},${longitude}`);
   locationsUrl.searchParams.set("radius", "25000");
@@ -88,40 +89,61 @@ async function getAirQuality(latitude, longitude) {
   const headers = { "X-API-Key": process.env.OPENAQ_API_KEY };
   const locationPayload = await fetchJson(locationsUrl, { headers });
   const locations = Array.isArray(locationPayload.results) ? locationPayload.results : [];
-  const location = locations.find((item) => (item.sensors || []).some(isParticleSensor));
-  if (!location) {
+  const now = Date.now();
+  const locationsWithRecentData = locations
+    .filter((location) => {
+      if (!(location.sensors || []).some(isParticleSensor)) return false;
+      const lastReportedAt = Date.parse(location.datetimeLast?.utc || "");
+      const age = now - lastReportedAt;
+      return Number.isFinite(lastReportedAt) && age >= -60 * 60 * 1000 && age <= freshnessWindowMs;
+    })
+    .sort((left, right) => (left.distance ?? Infinity) - (right.distance ?? Infinity));
+
+  if (!locationsWithRecentData.length) {
     return { available: false, message: "No OpenAQ station reporting PM2.5 or PM10 was found within 25 km.", measurements: [] };
   }
 
-  const latestUrl = `https://api.openaq.org/v3/locations/${encodeURIComponent(location.id)}/latest`;
-  const latestPayload = await fetchJson(latestUrl, { headers });
-  const sensorsById = new Map((location.sensors || []).map((sensor) => [sensor.id, sensor]));
-  const readings = Array.isArray(latestPayload.results) ? latestPayload.results : [];
-  const measurements = readings.flatMap((reading) => {
-    const parameter = findReadingParameter(reading, sensorsById);
-    const value = Number(reading.value);
-    if (!parameter || !Number.isFinite(value)) return [];
-    const datetime = reading.datetime?.utc ?? reading.datetime ?? reading.date?.utc ?? null;
-    return [{
-      parameter,
-      value,
-      unit: reading.parameter?.units
-        ?? sensorsById.get(reading.sensorsId ?? reading.sensorId ?? reading.sensor_id)?.parameter?.units
-        ?? null,
-      datetime
-    }];
-  });
-  const latestTimestamp = measurements
-    .map((item) => item.datetime)
-    .filter(Boolean)
-    .sort()
-    .at(-1) || null;
+  // Skip inactive or empty nearby stations and stop after a bounded number of provider calls.
+  for (const location of locationsWithRecentData.slice(0, 8)) {
+    const latestUrl = `https://api.openaq.org/v3/locations/${encodeURIComponent(location.id)}/latest`;
+    const latestPayload = await fetchJson(latestUrl, { headers });
+    const sensorsById = new Map((location.sensors || []).map((sensor) => [sensor.id, sensor]));
+    const readings = Array.isArray(latestPayload.results) ? latestPayload.results : [];
+    const measurements = readings.flatMap((reading) => {
+      const parameter = findReadingParameter(reading, sensorsById);
+      const value = Number(reading.value);
+      const datetime = reading.datetime?.utc ?? reading.datetime ?? reading.date?.utc ?? null;
+      const timestamp = Date.parse(datetime || "");
+      const age = now - timestamp;
+      if (!parameter || !Number.isFinite(value) || !Number.isFinite(timestamp) || age < -60 * 60 * 1000 || age > freshnessWindowMs) return [];
+      return [{
+        parameter,
+        value,
+        unit: reading.parameter?.units
+          ?? sensorsById.get(reading.sensorsId ?? reading.sensorId ?? reading.sensor_id)?.parameter?.units
+          ?? null,
+        datetime
+      }];
+    });
+
+    if (!measurements.length) continue;
+
+    const latestTimestamp = measurements
+      .map((item) => item.datetime)
+      .sort()
+      .at(-1);
+    return {
+      available: true,
+      station: location.name || "OpenAQ station",
+      observedAt: latestTimestamp,
+      measurements
+    };
+  }
 
   return {
-    available: true,
-    station: location.name || "OpenAQ station",
-    observedAt: latestTimestamp,
-    measurements
+    available: false,
+    message: "No recent PM2.5 or PM10 readings were found at nearby OpenAQ stations.",
+    measurements: []
   };
 }
 

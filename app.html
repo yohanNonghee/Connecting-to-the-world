@@ -30,18 +30,15 @@
         <input id="city-input" name="city" type="search" placeholder="Try a city, e.g. Bangkok or Reykjavík" autocomplete="off" minlength="2" required />
         <button class="button button-primary" type="submit">Search</button>
       </form>
-      <div id="search-status" class="inline-status" role="status" aria-live="polite"></div>
-      <!-- Quick picks search for a city and load its matching country directly. -->
-      <section class="popular-cities" aria-labelledby="popular-cities-title">
-        <h2 id="popular-cities-title">Popular cities</h2>
-        <div class="city-picks">
-          <button class="city-pick" type="button" data-city="Bangkok" data-country="Thailand">Bangkok</button>
-          <button class="city-pick" type="button" data-city="Reykjavik" data-country="Iceland">Reykjavik</button>
-          <button class="city-pick" type="button" data-city="Tokyo" data-country="Japan">Tokyo</button>
-          <button class="city-pick" type="button" data-city="London" data-country="United Kingdom">London</button>
-          <button class="city-pick" type="button" data-city="New York" data-country="United States">New York</button>
+      <!-- Quick picks load a curated city directly without requiring another search. -->
+      <section class="popular-cities" aria-labelledby="popular-cities-heading">
+        <div class="popular-cities-heading">
+          <h2 id="popular-cities-heading">Popular cities</h2>
+          <p>Choose an example to see its current conditions.</p>
         </div>
+        <div id="popular-city-buttons" class="popular-city-buttons" aria-label="Example cities"></div>
       </section>
+      <div id="search-status" class="inline-status" role="status" aria-live="polite"></div>
       <!-- Search results and the dashboard are populated safely from the API response. -->
       <section id="city-results" class="city-results" aria-label="City search results"></section>
       <section id="dashboard" class="dashboard" hidden aria-live="polite"></section>
