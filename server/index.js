@@ -10,7 +10,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
 const app = express();
 const port = Number(process.env.PORT || 3001);
-const requestTimeoutMs = 9000;
+const requestTimeoutMs = 15000;
+const upstreamRetryDelayMs = 300;
 const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS || 0);
 
 if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0) {
@@ -31,17 +32,36 @@ const apiLimiter = rateLimit({
 app.disable("x-powered-by");
 app.use("/api", apiLimiter);
 
-// Centralize upstream JSON requests with a finite timeout and explicit HTTP errors.
+// Retry a single transient provider failure while keeping each request time-bounded.
 async function fetchJson(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    signal: AbortSignal.timeout(requestTimeoutMs),
-    headers: { Accept: "application/json", ...options.headers }
-  });
-  if (!response.ok) {
-    throw new Error(`Data provider returned ${response.status}`);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        signal: AbortSignal.timeout(requestTimeoutMs),
+        headers: { Accept: "application/json", ...options.headers }
+      });
+    } catch (error) {
+      if (attempt === 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, upstreamRetryDelayMs));
+      continue;
+    }
+
+    if (response.ok) return response.json();
+
+    const retryable = response.status === 429 || response.status >= 500;
+    if (!retryable || attempt === 1) {
+      throw new Error(`Data provider returned ${response.status}`);
+    }
+
+    const retryAfterMs = Number(response.headers.get("retry-after")) * 1000;
+    const delayMs = Number.isFinite(retryAfterMs) && retryAfterMs > 0
+      ? Math.min(retryAfterMs, 2000)
+      : upstreamRetryDelayMs;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
-  return response.json();
+  throw new Error("Data provider request failed after retry.");
 }
 
 // Normalize and validate external input before using it in provider requests.
