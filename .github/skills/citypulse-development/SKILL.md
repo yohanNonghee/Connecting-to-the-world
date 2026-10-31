@@ -17,7 +17,7 @@ Use this workflow for CityPulse changes so API data, MCP behavior, and user-faci
 ## Change workflow
 
 1. Trace the relevant browser → Express route → upstream API/MCP tool flow before editing.
-2. Validate query parameters at the server boundary, set finite request timeouts, and return explicit HTTP errors.
+2. Validate query parameters at the server boundary, set finite request timeouts, cache successful provider data, and return explicit HTTP errors including retry guidance for upstream rate limits.
 3. Keep OpenAQ failures separate from weather failures so a missing station/key does not hide available weather. Show a clear unavailable state rather than a success-shaped placeholder.
 4. Render remote text with DOM text APIs; do not inject API values as HTML.
 5. Keep loading, empty, partial-data, rate-limit, and retryable error states understandable.

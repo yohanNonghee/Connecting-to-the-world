@@ -5,6 +5,7 @@ import express from "express";
 import rateLimit from "express-rate-limit";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { createTtlCache } from "./ttl-cache.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
@@ -13,6 +14,20 @@ const port = Number(process.env.PORT || 3001);
 const requestTimeoutMs = 15000;
 const upstreamRetryDelayMs = 300;
 const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS || 0);
+const weatherCache = createTtlCache({
+  ttlMs: 10 * 60 * 1000,
+  staleTtlMs: 6 * 60 * 60 * 1000,
+  maxEntries: 100
+});
+
+class DataProviderError extends Error {
+  constructor(provider, status, retryAfter) {
+    super(`${provider} returned ${status}`);
+    this.provider = provider;
+    this.status = status;
+    this.retryAfter = retryAfter;
+  }
+}
 
 if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0) {
   throw new Error("TRUST_PROXY_HOPS must be a non-negative integer.");
@@ -32,7 +47,7 @@ const apiLimiter = rateLimit({
 app.disable("x-powered-by");
 app.use("/api", apiLimiter);
 
-// Retry a single transient provider failure while keeping each request time-bounded.
+// Retry a transient provider failure once while preserving rate-limit details.
 async function fetchJson(url, options = {}) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let response;
@@ -50,18 +65,25 @@ async function fetchJson(url, options = {}) {
 
     if (response.ok) return response.json();
 
-    const retryable = response.status === 429 || response.status >= 500;
-    if (!retryable || attempt === 1) {
-      throw new Error(`Data provider returned ${response.status}`);
+    if (response.status === 429) {
+      throw new DataProviderError(new URL(url).hostname, response.status, response.headers.get("retry-after"));
     }
-
-    const retryAfterMs = Number(response.headers.get("retry-after")) * 1000;
-    const delayMs = Number.isFinite(retryAfterMs) && retryAfterMs > 0
-      ? Math.min(retryAfterMs, 2000)
-      : upstreamRetryDelayMs;
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    if (response.status < 500 || attempt === 1) {
+      throw new DataProviderError(new URL(url).hostname, response.status, response.headers.get("retry-after"));
+    }
+    await new Promise((resolve) => setTimeout(resolve, upstreamRetryDelayMs));
   }
   throw new Error("Data provider request failed after retry.");
+}
+
+function retryAfterSeconds(value) {
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds > 0) return Math.min(Math.ceil(seconds), 3600);
+  if (value) {
+    const dateDelay = Math.ceil((Date.parse(value) - Date.now()) / 1000);
+    if (Number.isFinite(dateDelay) && dateDelay > 0) return Math.min(dateDelay, 3600);
+  }
+  return 60;
 }
 
 // Normalize and validate external input before using it in provider requests.
@@ -235,10 +257,28 @@ app.get("/api/city", async (request, response) => {
   weatherUrl.searchParams.set("forecast_days", "1");
 
   let weather;
+  let weatherIsStale = false;
   try {
-    weather = await fetchJson(weatherUrl);
+    const cacheKey = `${latitude.toFixed(3)},${longitude.toFixed(3)}`;
+    const cachedWeather = await weatherCache.get(cacheKey, async () => {
+      const payload = await fetchJson(weatherUrl);
+      if (!payload.current || typeof payload.current.temperature_2m !== "number") {
+        throw new Error("Open-Meteo response did not contain current weather.");
+      }
+      return payload;
+    });
+    weather = cachedWeather.value;
+    weatherIsStale = cachedWeather.stale;
   } catch (error) {
-    console.error("Weather request failed:", error.message);
+    console.error("Weather request failed:", error.message, error.cause?.message || "");
+    if (error instanceof DataProviderError && error.status === 429) {
+      const retryAfter = retryAfterSeconds(error.retryAfter);
+      response.set("Retry-After", String(retryAfter));
+      response.status(503).json({
+        error: `Open-Meteo is rate-limiting requests. Please retry in about ${retryAfter} seconds.`
+      });
+      return;
+    }
     response.status(502).json({ error: "Could not load weather from Open-Meteo. Please try again later." });
     return;
   }
@@ -307,7 +347,7 @@ app.get("/api/city", async (request, response) => {
 
   response.json({
     city: { name, country, latitude, longitude },
-    weather: { current, time: current.time, timezone: weather.timezone },
+    weather: { current, time: current.time, timezone: weather.timezone, isStale: weatherIsStale },
     airQuality,
     insight
   });

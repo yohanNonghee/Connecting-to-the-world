@@ -46,7 +46,7 @@
         <p class="section-kicker">03 / TECHNICAL DECISIONS</p><h2>Implementation choices and failure handling</h2>
         <div class="decision-list">
           <article><span>01</span><div><h3>Vite + vanilla JavaScript</h3><p>Multi-page UI without an unnecessary framework; native Fetch API keeps the asynchronous data flow explicit.</p></div></article>
-          <article><span>02</span><div><h3>Express server-side API proxy</h3><p>The browser never receives the API key. The backend validates query parameters and coordinates, applies request timeouts, maps upstream errors, and rate-limits API calls.</p></div></article>
+          <article><span>02</span><div><h3>Express server-side API proxy</h3><p>The browser never receives the API key. The backend validates query parameters and coordinates, applies request timeouts, maps upstream errors, and rate-limits API calls. Successful weather responses are cached for 10 minutes; the most recent response can be shown as a clearly labeled cached reading during a temporary provider outage.</p></div></article>
           <article><span>03</span><div><h3>Independent source states</h3><p>If OpenAQ has no key, station, or response, available Open-Meteo weather remains visible with an explicit unavailable message. A weather API failure returns an actionable error instead of fabricated data.</p></div></article>
           <article><span>04</span><div><h3>MCP behind the backend</h3><p>The MCP server exposes one typed tool to summarize normalized values. It accepts no SQL and makes no upstream requests; the backend connects through an MCP Client and stdio transport.</p></div></article>
           <article><span>05</span><div><h3>No invented AQI value</h3><p>OpenAQ provides sensor concentrations rather than an AQI score. The UI shows units and data limitations instead of implying unsupported health guidance.</p></div></article>
@@ -67,7 +67,7 @@
           <li>Run <code>npm test</code> and <code>npm run build</code> before deployment.</li>
           <li>Deploy as a Node web service: build command <code>npm ci --include=dev &amp;&amp; npm run build</code>, start command <code>npm start</code>, and configure <code>OPENAQ_API_KEY</code> as a host secret.</li>
         </ol>
-        <p>The Vite development proxy and production same-origin setup avoid browser CORS issues. Render deployment is configured in <code>render.yaml</code>; other hosts must provide a Node.js 20–24 runtime and the environment variables described above. The rate limiter uses in-memory state, suitable for a demo or single instance; multi-instance production should use a shared store. Confirm current OpenAQ key, quota, terms, and service availability before release.</p>
+        <p>The Vite development proxy and production same-origin setup avoid browser CORS issues. Open-Meteo responses are cached in process memory to reduce repeat calls; a rate-limited response returns a retry hint, and a previous result may be served for up to six hours with a cached label. Render deployment is configured in <code>render.yaml</code>; other hosts must provide a Node.js 20–24 runtime and the environment variables described above. The rate limiter and response cache use in-memory state, suitable for a demo or single instance; multi-instance production should use shared stores. Confirm current OpenAQ key, quota, terms, and service availability before release.</p>
       </section>
 
       <!-- Submission template gives reviewers a concise route to the live app and its report. -->

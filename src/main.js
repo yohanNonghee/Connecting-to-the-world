@@ -113,7 +113,11 @@ function renderDashboard(data) {
   const kicker = createTextElement("p", "section-kicker", "CITY SNAPSHOT");
   const title = createTextElement("h2", "", [data.city.name, data.city.country].filter(Boolean).join(", "));
   titleGroup.append(kicker, title);
-  const updated = createTextElement("span", "updated-label", `Local time ${data.weather.time || "—"}`);
+  const updated = createTextElement(
+    "span",
+    "updated-label",
+    `Local time ${data.weather.time || "—"}${data.weather.isStale ? " · Cached reading" : ""}`
+  );
   heading.append(titleGroup, updated);
 
   const grid = document.createElement("div");
