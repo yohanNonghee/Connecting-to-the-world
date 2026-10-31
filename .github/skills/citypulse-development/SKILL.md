@@ -10,7 +10,7 @@ Use this workflow for CityPulse changes so API data, MCP behavior, and user-faci
 ## Project boundaries
 
 - The browser calls only same-origin `/api/*` routes. Keep upstream requests and credentials on the server.
-- Open-Meteo geocoding and forecast plus OpenAQ v3 are data APIs. The `citypulse-insights` MCP server summarizes normalized values; it is not a substitute for either API.
+- Open-Meteo geocoding and forecast plus OpenAQ v3 are data APIs. MET Norway is the weather fallback when Open-Meteo fails or rate-limits; send a User-Agent and preserve its attribution requirements. The `citypulse-insights` MCP server summarizes normalized values; it is not a substitute for either API.
 - OpenAQ PM readings are concentrations, not AQI. Do not invent AQI categories, health claims, or data timestamps.
 - Keep the MCP tool narrow and typed. Do not add arbitrary SQL, shell execution, or untrusted prompt-driven actions.
 

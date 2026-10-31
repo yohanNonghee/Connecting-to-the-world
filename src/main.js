@@ -5,6 +5,8 @@ const status = document.querySelector("#search-status");
 const results = document.querySelector("#city-results");
 const dashboard = document.querySelector("#dashboard");
 const popularCityButtons = document.querySelector("#popular-city-buttons");
+let rateLimitUntil = 0;
+let rateLimitTimer;
 
 // Provide direct-load example cities so visitors can explore without typing a search.
 const popularCities = [
@@ -30,6 +32,10 @@ const weatherDescriptions = {
   61: "Slight rain",
   63: "Moderate rain",
   65: "Heavy rain",
+  66: "Light freezing rain",
+  67: "Heavy freezing rain",
+  68: "Slight to moderate sleet",
+  69: "Heavy sleet",
   71: "Slight snowfall",
   73: "Moderate snowfall",
   75: "Heavy snowfall",
@@ -47,6 +53,36 @@ function setStatus(message, kind = "") {
   status.className = `inline-status ${kind}`.trim();
 }
 
+// Pause all provider-backed actions until the server's Retry-After window expires.
+function startRateLimitCooldown(seconds) {
+  rateLimitUntil = Math.max(rateLimitUntil, Date.now() + seconds * 1000);
+  clearInterval(rateLimitTimer);
+
+  const searchButton = form.querySelector('button[type="submit"]');
+  const updateCooldown = () => {
+    const remaining = Math.ceil((rateLimitUntil - Date.now()) / 1000);
+    if (remaining <= 0) {
+      clearInterval(rateLimitTimer);
+      rateLimitTimer = undefined;
+      input.disabled = false;
+      searchButton.disabled = false;
+      popularCityButtons.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+      results.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+      setStatus("The rate-limit cooldown has ended. You can try again.", "success");
+      return;
+    }
+
+    input.disabled = true;
+    searchButton.disabled = true;
+    popularCityButtons.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+    results.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+    setStatus(`Open-Meteo is rate-limiting requests. Try again in ${remaining} seconds.`, "error");
+  };
+
+  updateCooldown();
+  rateLimitTimer = setInterval(updateCooldown, 1000);
+}
+
 // Decode backend JSON and turn HTTP failures into visible user-facing errors.
 async function requestJson(url) {
   let response;
@@ -60,7 +96,15 @@ async function requestJson(url) {
   }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.error || `Request failed (${response.status})`);
+    const error = new Error(payload.error || `Request failed (${response.status})`);
+    if (response.status === 503 && response.headers.has("retry-after")) {
+      const retryAfter = response.headers.get("retry-after");
+      const seconds = Number(retryAfter);
+      error.retryAfterSeconds = Number.isFinite(seconds) && seconds > 0
+        ? Math.min(Math.ceil(seconds), 3600)
+        : Math.max(1, Math.min(Math.ceil((Date.parse(retryAfter) - Date.now()) / 1000) || 60, 3600));
+    }
+    throw error;
   }
   return payload;
 }
@@ -116,7 +160,7 @@ function renderDashboard(data) {
   const updated = createTextElement(
     "span",
     "updated-label",
-    `Local time ${data.weather.time || "—"}${data.weather.isStale ? " · Cached reading" : ""}`
+    `${data.weather.timezone === "UTC" ? "Forecast time" : "Local time"} ${data.weather.time || "—"}${data.weather.isStale ? " · Cached reading" : ""}`
   );
   heading.append(titleGroup, updated);
 
@@ -125,16 +169,19 @@ function renderDashboard(data) {
   const current = data.weather.current;
   const weatherCard = document.createElement("article");
   weatherCard.className = "metric-card weather-card";
+  const weatherFootnotes = [];
+  if (typeof current.apparent_temperature === "number") {
+    weatherFootnotes.push(`Feels like ${Math.round(current.apparent_temperature)}°`);
+  }
+  if (typeof current.wind_speed_10m === "number") {
+    weatherFootnotes.push(`Wind ${Math.round(current.wind_speed_10m)} km/h`);
+  }
   weatherCard.append(
     createTextElement("span", "metric-label", "CURRENT WEATHER"),
     createTextElement("span", "weather-symbol", "☼"),
     createTextElement("strong", "temperature", `${Math.round(current.temperature_2m)}°`),
     createTextElement("span", "metric-subtitle", weatherDescriptions[current.weather_code] || "Current conditions"),
-    createTextElement(
-      "span",
-      "metric-footnote",
-      `Feels like ${Math.round(current.apparent_temperature)}° · Wind ${Math.round(current.wind_speed_10m)} km/h`
-    )
+    ...(weatherFootnotes.length ? [createTextElement("span", "metric-footnote", weatherFootnotes.join(" · "))] : [])
   );
   weatherCard.querySelector(".weather-symbol").setAttribute("aria-hidden", "true");
 
@@ -183,10 +230,12 @@ function renderDashboard(data) {
   );
   grid.append(weatherCard, airCard);
   dashboard.append(heading, grid, insight);
+  dashboard.append(createTextElement("p", "weather-source", `Weather source: ${data.weather.source || "Open-Meteo"}`));
 }
 
 // Load the selected location while preserving a clear partial-data state.
 async function loadCity(place) {
+  if (Date.now() < rateLimitUntil) return;
   results.replaceChildren();
   dashboard.hidden = true;
   setStatus(`Loading data for ${place.name}…`, "loading");
@@ -201,7 +250,11 @@ async function loadCity(place) {
     renderDashboard(data);
     setStatus("");
   } catch (error) {
-    setStatus(error.message || "Could not load city data. Please try again.", "error");
+    if (error.retryAfterSeconds) {
+      startRateLimitCooldown(error.retryAfterSeconds);
+    } else {
+      setStatus(error.message || "Could not load city data. Please try again.", "error");
+    }
   }
 }
 
@@ -210,6 +263,7 @@ renderPopularCities();
 // Search Open-Meteo geocoding results and let the user choose the exact location.
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (Date.now() < rateLimitUntil) return;
   const query = input.value.trim();
   if (query.length < 2) {
     setStatus("Enter a city name with at least 2 characters.", "error");
@@ -227,6 +281,10 @@ form.addEventListener("submit", async (event) => {
     for (const place of payload.results) addResultButton(place);
     setStatus("Choose a location to view its data.", "success");
   } catch (error) {
-    setStatus(error.message || "Search failed. Please try again.", "error");
+    if (error.retryAfterSeconds) {
+      startRateLimitCooldown(error.retryAfterSeconds);
+    } else {
+      setStatus(error.message || "Search failed. Please try again.", "error");
+    }
   }
 });

@@ -79,6 +79,7 @@ h1, h2, h3, p { margin-top: 0; }
 .search-form input { flex: 1; min-width: 0; outline: 0; border: 0; color: var(--ink); font-size: 13px; }
 .search-form input::placeholder { color: #a3aca4; }
 .search-form .button { padding: 12px 22px; }
+.search-form button:disabled, .popular-city-button:disabled, .city-result:disabled { cursor: not-allowed; opacity: .55; transform: none; }
 .popular-cities { margin-top: 21px; }
 .popular-cities-heading { display: flex; align-items: baseline; gap: 12px; }
 .popular-cities-heading h2 { margin: 0; font-size: 13px; }
@@ -120,6 +121,7 @@ h1, h2, h3, p { margin-top: 0; }
 .insight-card { margin-top: 13px; padding: 17px 19px; border-left: 3px solid #8eae93; background: #eff4ed; border-radius: 3px 8px 8px 3px; }
 .insight-card p { margin: 8px 0 0; color: #536258; font-size: 12px; line-height: 1.8; }
 .insight-unavailable { border-left-color: #d7b17f; background: #faf4ea; }
+.weather-source { margin: 12px 0 0; color: #879188; font-size: 9px; text-align: right; }
 .app-disclaimer { margin: 18px 0 0; color: #859087; font-size: 10px; line-height: 1.7; }
 .app-footer { border-top: 1px solid var(--line); max-width: 890px; margin: auto; padding: 18px 28px; display: flex; justify-content: space-between; color: #7d8980; font-size: 10px; }
 /* Technical report, architecture flows, and submission template */

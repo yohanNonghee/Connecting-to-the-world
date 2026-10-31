@@ -6,6 +6,7 @@ import rateLimit from "express-rate-limit";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { createTtlCache } from "./ttl-cache.js";
+import { loadWeather } from "./weather.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
@@ -19,6 +20,8 @@ const weatherCache = createTtlCache({
   staleTtlMs: 6 * 60 * 60 * 1000,
   maxEntries: 100
 });
+const metNoUserAgent = process.env.METNO_USER_AGENT
+  || "CityPulse/1.0 (https://github.com/yohanNonghee/Connecting-to-the-world)";
 
 class DataProviderError extends Error {
   constructor(provider, status, retryAfter) {
@@ -260,26 +263,30 @@ app.get("/api/city", async (request, response) => {
   let weatherIsStale = false;
   try {
     const cacheKey = `${latitude.toFixed(3)},${longitude.toFixed(3)}`;
-    const cachedWeather = await weatherCache.get(cacheKey, async () => {
-      const payload = await fetchJson(weatherUrl);
-      if (!payload.current || typeof payload.current.temperature_2m !== "number") {
-        throw new Error("Open-Meteo response did not contain current weather.");
-      }
-      return payload;
-    });
+    const cachedWeather = await weatherCache.get(
+      cacheKey,
+      () => loadWeather({
+        latitude,
+        longitude,
+        openMeteoUrl: weatherUrl,
+        fetchJson,
+        userAgent: metNoUserAgent
+      })
+    );
     weather = cachedWeather.value;
     weatherIsStale = cachedWeather.stale;
   } catch (error) {
-    console.error("Weather request failed:", error.message, error.cause?.message || "");
+    console.error("Weather request failed:", error.message, error.openMeteoError?.message || error.fallbackError?.message || "");
     if (error instanceof DataProviderError && error.status === 429) {
       const retryAfter = retryAfterSeconds(error.retryAfter);
+      const provider = error.provider === "api.met.no" ? "MET Norway" : "Open-Meteo";
       response.set("Retry-After", String(retryAfter));
       response.status(503).json({
-        error: `Open-Meteo is rate-limiting requests. Please retry in about ${retryAfter} seconds.`
+        error: `${provider} is rate-limiting requests. Please retry in about ${retryAfter} seconds.`
       });
       return;
     }
-    response.status(502).json({ error: "Could not load weather from Open-Meteo. Please try again later." });
+    response.status(502).json({ error: "Could not load weather from the available providers. Please try again later." });
     return;
   }
 
@@ -309,6 +316,10 @@ app.get("/api/city", async (request, response) => {
     61: "Slight rain",
     63: "Moderate rain",
     65: "Heavy rain",
+    66: "Light freezing rain",
+    67: "Heavy freezing rain",
+    68: "Slight to moderate sleet",
+    69: "Heavy sleet",
     71: "Slight snowfall",
     73: "Moderate snowfall",
     75: "Heavy snowfall",
@@ -347,7 +358,13 @@ app.get("/api/city", async (request, response) => {
 
   response.json({
     city: { name, country, latitude, longitude },
-    weather: { current, time: current.time, timezone: weather.timezone, isStale: weatherIsStale },
+    weather: {
+      current,
+      time: current.time,
+      timezone: weather.timezone,
+      source: weather.source || "Open-Meteo",
+      isStale: weatherIsStale
+    },
     airQuality,
     insight
   });
